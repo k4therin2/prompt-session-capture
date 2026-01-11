@@ -1,0 +1,168 @@
+#!/bin/bash
+# Pre-push hook: Deep security review via Claude Code
+#
+# Spins up a fresh Claude Code instance with NO context to perform
+# an unbiased security review of changes being pushed.
+#
+# Install:
+#   cp hooks/pre-push-claude .git/hooks/pre-push
+#   chmod +x .git/hooks/pre-push
+#
+# Requirements:
+#   - claude CLI installed and authenticated
+#   - Sufficient Claude usage remaining
+
+set -e
+
+echo "========================================"
+echo "Pre-Push Security Review (Claude-powered)"
+echo "========================================"
+
+# Get the files being pushed
+REMOTE="$1"
+URL="$2"
+
+# Get list of commits being pushed
+while read local_ref local_sha remote_ref remote_sha; do
+    if [ "$local_sha" = "0000000000000000000000000000000000000000" ]; then
+        # Deleting branch, skip
+        continue
+    fi
+
+    if [ "$remote_sha" = "0000000000000000000000000000000000000000" ]; then
+        # New branch, review all commits
+        RANGE="$local_sha"
+    else
+        # Existing branch, review new commits
+        RANGE="$remote_sha..$local_sha"
+    fi
+
+    # Get changed files
+    CHANGED_FILES=$(git diff --name-only "$RANGE" 2>/dev/null || git diff --name-only HEAD~1)
+
+    if [ -z "$CHANGED_FILES" ]; then
+        echo "No files changed, skipping review."
+        exit 0
+    fi
+
+    echo "Files to review:"
+    echo "$CHANGED_FILES" | sed 's/^/  - /'
+    echo ""
+
+    # Get the diff content
+    DIFF_CONTENT=$(git diff "$RANGE" 2>/dev/null || git diff HEAD~1)
+
+    # Create a temporary file with the review prompt
+    REVIEW_PROMPT=$(cat <<'PROMPT_EOF'
+You are a security reviewer with NO prior context about this project.
+Your job is to review this git diff for security issues before it's pushed to a public repository.
+
+## What to Check
+
+### Critical (BLOCK the push):
+- API keys, tokens, secrets (sk-*, AKIA*, Bearer, private keys)
+- Hardcoded passwords or credentials
+- Database files (.db, .sqlite)
+- Private IP addresses or internal hostnames
+- PII (email addresses in code, not in .gitignore examples)
+- Absolute paths with usernames (/home/username/, /Users/username/)
+
+### Warning (Flag but allow):
+- Debug code left in (print statements, console.log with sensitive data)
+- Commented-out code with sensitive info
+- TODO comments mentioning security issues
+- Overly permissive file permissions in scripts
+
+### Info (Note for awareness):
+- New dependencies added
+- Configuration changes
+- Permission changes
+
+## Response Format
+
+Respond with EXACTLY one of these verdicts on the FIRST line:
+- PASS: No security issues found
+- WARN: Minor issues found (list them), but OK to push
+- BLOCK: Critical security issues found (list them), do NOT push
+
+Then provide details.
+
+Example:
+```
+PASS: No security issues detected in this diff.
+
+Reviewed 3 files:
+- src/capture.py: New function added, no secrets
+- README.md: Documentation update
+- tests/test_sanitizer.py: Test cases, no real credentials
+```
+
+Or:
+```
+BLOCK: Critical security issues found.
+
+1. src/config.py line 15: Hardcoded API key "sk-abc123..."
+2. data/users.db: Database file should not be committed
+
+Remove these before pushing.
+```
+
+## The Diff to Review
+
+PROMPT_EOF
+)
+
+    # Combine prompt with diff
+    FULL_PROMPT="$REVIEW_PROMPT
+
+\`\`\`diff
+$DIFF_CONTENT
+\`\`\`"
+
+    echo "Sending to Claude for security review..."
+    echo "(This uses a fresh context with no project knowledge)"
+    echo ""
+
+    # Run Claude with --print flag for non-interactive output
+    # Using a subshell to capture output
+    REVIEW_RESULT=$(echo "$FULL_PROMPT" | claude --print -p - 2>&1) || {
+        echo "Warning: Claude review failed, falling back to basic checks"
+        # Run basic pattern checks as fallback
+        if echo "$DIFF_CONTENT" | grep -qE 'sk-[a-zA-Z0-9]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN.*PRIVATE KEY-----'; then
+            echo "BLOCK: Pattern-based check found potential secrets"
+            exit 1
+        fi
+        exit 0
+    }
+
+    echo "$REVIEW_RESULT"
+    echo ""
+
+    # Parse the verdict
+    VERDICT=$(echo "$REVIEW_RESULT" | head -1 | grep -oE '^(PASS|WARN|BLOCK)' || echo "UNKNOWN")
+
+    case "$VERDICT" in
+        PASS)
+            echo "✓ Security review passed"
+            ;;
+        WARN)
+            echo "⚠ Security review found warnings (see above)"
+            echo "Proceeding with push..."
+            ;;
+        BLOCK)
+            echo "✗ Security review BLOCKED the push"
+            echo ""
+            echo "Please address the issues above before pushing."
+            echo "To bypass (NOT recommended): git push --no-verify"
+            exit 1
+            ;;
+        *)
+            echo "? Could not parse review verdict, proceeding with caution"
+            ;;
+    esac
+
+done
+
+echo ""
+echo "========================================"
+exit 0
