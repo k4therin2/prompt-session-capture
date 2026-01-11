@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "prompt-session-capture"
+version = "0.1.0"
+description = "Capture and analyze AI coding assistant sessions"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+keywords = ["claude", "ai", "workflow", "session", "capture", "analytics"]
+
+[project.scripts]
+psc = "prompt_session_capture.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/k4therin2/prompt-session-capture"
+Repository = "https://github.com/k4therin2/prompt-session-capture"
+Issues = "https://github.com/k4therin2/prompt-session-capture/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
