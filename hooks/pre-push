@@ -1,0 +1,71 @@
+#!/bin/bash
+# Pre-push hook: Security check before pushing to remote
+#
+# Prevents pushing if sensitive patterns are detected in staged files.
+# Install: cp hooks/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+
+set -e
+
+echo "Running security check before push..."
+
+# Patterns that should NEVER be in the repo
+FORBIDDEN_PATTERNS=(
+    # Secrets
+    'sk-[a-zA-Z0-9]{20,}'           # OpenAI/Anthropic API keys
+    'AKIA[0-9A-Z]{16}'              # AWS access keys
+    '-----BEGIN.*PRIVATE KEY-----'  # Private keys
+    'Bearer [a-zA-Z0-9_-]+'         # Bearer tokens
+
+    # PII patterns
+    '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}'  # Emails (be careful - may have false positives)
+
+    # Hardcoded paths with usernames
+    '/home/[^/]+/'                  # Linux home dirs
+    '/Users/[^/]+/'                 # macOS home dirs
+    'C:\\Users\\[^\\]+'             # Windows home dirs
+)
+
+# Files to check (exclude binary, vendor, etc)
+FILES_TO_CHECK=$(git diff --cached --name-only --diff-filter=ACM | grep -E '\.(py|md|yaml|yml|json|txt|sh)$' || true)
+
+if [ -z "$FILES_TO_CHECK" ]; then
+    echo "No text files to check."
+    exit 0
+fi
+
+FOUND_ISSUES=0
+
+for pattern in "${FORBIDDEN_PATTERNS[@]}"; do
+    # Use git grep on staged content
+    if git diff --cached --unified=0 | grep -qE "$pattern"; then
+        echo "BLOCKED: Found forbidden pattern: $pattern"
+        FOUND_ISSUES=1
+    fi
+done
+
+# Check for database files accidentally staged
+if git diff --cached --name-only | grep -qE '\.(db|sqlite|sqlite3)$'; then
+    echo "BLOCKED: Database file staged for commit!"
+    FOUND_ISSUES=1
+fi
+
+# Check for common secret file names
+SECRET_FILES=('.env' 'credentials.json' 'secrets.yaml' 'config.yaml' '.credentials')
+for secret_file in "${SECRET_FILES[@]}"; do
+    if git diff --cached --name-only | grep -q "^${secret_file}$"; then
+        echo "BLOCKED: Secret file staged: $secret_file"
+        FOUND_ISSUES=1
+    fi
+done
+
+if [ $FOUND_ISSUES -eq 1 ]; then
+    echo ""
+    echo "Push blocked due to security concerns."
+    echo "Review the patterns above and remove sensitive data before pushing."
+    echo ""
+    echo "If this is a false positive, you can bypass with: git push --no-verify"
+    exit 1
+fi
+
+echo "Security check passed."
+exit 0

@@ -25,7 +25,27 @@ This is the project backlog for prompt-session-capture. Items are prioritized by
 
 ---
 
-## Phase 2: Workflow Analysis
+## Phase 2: Workflow Memory (HIGH PRIORITY)
+
+### P0 - User's Core Use Case
+
+- [ ] **Workflows table**: Named reusable approaches (security-review, blog-post, requirements-breakdown)
+- [ ] **Workflow instances**: Each execution with context (project, date, what changed)
+- [ ] **Approach caching**: "Use last cached approach if nothing changed"
+- [ ] **Update detection**: Check if new sessions suggest approach needs updating
+- [ ] **Preference extraction**: Learn patterns from multiple instances
+- [ ] **Execution logging**: Capture approach taken, reasoning, results back to DB
+
+**Target UX:**
+```
+User: "Run our security review"
+System:
+  1. Finds workflow: security-review (last run: Jan 10)
+  2. Checks: 2 new sessions since, same project context
+  3. Reports: "Using cached approach, no updates needed"
+  4. Executes steps, reports results
+  5. Logs this execution to workflow_instances
+```
 
 ### P1 - Critical
 

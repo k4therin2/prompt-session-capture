@@ -55,6 +55,20 @@ export PSC_HISTORY_FILE=~/.claude/history.jsonl
 export PSC_DB_PATH=~/.prompt-session-capture/sessions.db
 ```
 
+## Git Hooks
+
+Security pre-push hook prevents accidentally pushing secrets:
+
+```bash
+cp hooks/pre-push .git/hooks/pre-push
+chmod +x .git/hooks/pre-push
+```
+
+Blocks pushes containing:
+- API keys, AWS credentials, private keys
+- Database files
+- Hardcoded home directory paths
+
 ## License
 
 MIT
